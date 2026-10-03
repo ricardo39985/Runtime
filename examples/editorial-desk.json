@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "name": "Editorial Desk",
+  "description": "A different data model using the same engine.",
+  "roles": [
+    "owner",
+    "reader"
+  ],
+  "entities": [
+    {
+      "id": "articles",
+      "label": "Articles",
+      "read_roles": [
+        "owner",
+        "reader"
+      ],
+      "write_roles": [
+        "owner"
+      ],
+      "fields": [
+        {
+          "id": "title",
+          "label": "Title",
+          "type": "text",
+          "required": true,
+          "max_length": 160
+        },
+        {
+          "id": "copy",
+          "label": "Article copy",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "word_count",
+          "label": "Word count",
+          "type": "integer",
+          "default": "0"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "desk",
+      "title": "Editorial desk",
+      "blocks": [
+        {
+          "kind": "table",
+          "entity": "articles"
+        },
+        {
+          "kind": "form",
+          "entity": "articles"
+        },
+        {
+          "kind": "action",
+          "action": "count"
+        }
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "core.text.word_count@1",
+      "description": "Count whitespace-delimited words.",
+      "inputs": [
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "id": "words",
+          "label": "Words",
+          "type": "integer",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "count",
+      "label": "Count words",
+      "entity": "articles",
+      "capability": "core.text.word_count@1",
+      "inputs": {
+        "text": "copy"
+      },
+      "outputs": {
+        "word_count": "words"
+      },
+      "roles": [
+        "owner"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+#include "runtime/generation_budget.hpp"
+#include <iostream>
+int main(){using namespace runtime::generation;using runtime::application::ensure;
+ try{ensure(cost(1,1)==1,"test","Round up fractional microdollars.");ensure(cost(1000000,2500000)==2500000,"test","Exact million-token units.");ensure(reserve(1000,100000,400000,250000)>0,"test","Reservation exists.");bool rejected=false;try{reserve(100000,100000000,100000000,250000);}catch(const runtime::application::Invalid&){rejected=true;}ensure(rejected,"test","Over-budget request not blocked.");rejected=false;try{cost(UINT64_MAX,UINT64_MAX);}catch(const runtime::application::Invalid&){rejected=true;}ensure(rejected,"test","Overflow not blocked.");std::cout<<"5 generation budget checks passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

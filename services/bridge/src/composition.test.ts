@@ -1,0 +1,15 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {COMPOSITION_INSTRUCTIONS,compose,parseComposition,providerRequest,type CompositionRequest} from './composition.ts';
+const request:CompositionRequest={model:'test-account-model',brief:'A creative studio with painting, customer projects and assets.',schema:{type:'object'},max_output_tokens:8192,dispatch_id:'a'.repeat(32)};
+const response=()=>({id:'response-test',model:'test-account-model',status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{"schema_version":1}'}]}],usage:{input_tokens:100,output_tokens:20}});
+test('compiler asks for a complete app and preserves missing capabilities',()=>{assert.match(COMPOSITION_INSTRUCTIONS,/entire requested/);assert.match(COMPOSITION_INSTRUCTIONS,/must not prevent building/);assert.match(COMPOSITION_INSTRUCTIONS,/Never substitute a narrower demo/);});
+test('not a predefined app selector',()=>{const a=providerRequest(request);const b=providerRequest({...request,brief:'A booking SaaS for independently managed companies.'});assert.notEqual(a.input[1].content,b.input[1].content);assert.equal(a.input[0].content,b.input[0].content);assert.equal(a.store,false);assert.equal('tools' in a,false);});
+test('schema revision preserves prior application',()=>assert.match(providerRequest({...request,previous_spec:{name:'Existing'}}).input[1].content,/Existing/));
+test('fixed output budget',()=>assert.throws(()=>providerRequest({...request,max_output_tokens:999999})));
+test('input bounded',()=>assert.throws(()=>providerRequest({...request,brief:'x'.repeat(12001)})));
+test('valid receipt parsed without executing model content',()=>assert.equal(parseComposition(response()).spec_text,'{"schema_version":1}'));
+test('truncation does not become a reduced product',()=>assert.throws(()=>parseComposition({...response(),status:'incomplete'})));
+test('unknown usage rejected',()=>assert.throws(()=>parseComposition({...response(),usage:{input_tokens:-1,output_tokens:1}})));
+test('no credentials means no provider call',async()=>{let calls=0;await assert.rejects(compose(request,'',async()=>{calls++;return new Response();}));assert.equal(calls,0);});
+test('one fixed endpoint, no redirects or retries',async()=>{let calls=0;const result=await compose(request,'test-only',async(url,options)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(options?.redirect,'error');return new Response(JSON.stringify(response()));});assert.equal(calls,1);assert.equal(result.provider_id,'response-test');});
+test('rate limits are not retried',async()=>{let calls=0;await assert.rejects(compose(request,'test-only',async()=>{calls++;return new Response('',{status:429});}));assert.equal(calls,1);});

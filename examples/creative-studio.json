@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "name": "Creative Studio",
+  "description": "Projects and assets are usable before a paint implementation exists.",
+  "roles": [
+    "owner",
+    "reader"
+  ],
+  "entities": [
+    {
+      "id": "projects",
+      "label": "Projects",
+      "read_roles": [
+        "owner",
+        "reader"
+      ],
+      "write_roles": [
+        "owner"
+      ],
+      "fields": [
+        {
+          "id": "name",
+          "label": "Project name",
+          "type": "text",
+          "required": true,
+          "max_length": 160
+        },
+        {
+          "id": "brief",
+          "label": "Creative brief",
+          "type": "text",
+          "required": true
+        },
+        {
+          "id": "status",
+          "label": "Status",
+          "type": "choice",
+          "options": [
+            "draft",
+            "review",
+            "complete"
+          ],
+          "default": "draft",
+          "required": true
+        },
+        {
+          "id": "artwork",
+          "label": "Artwork",
+          "type": "file"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "projects",
+      "title": "Projects",
+      "blocks": [
+        {
+          "kind": "table",
+          "entity": "projects",
+          "title": "Project library"
+        },
+        {
+          "kind": "form",
+          "entity": "projects",
+          "title": "New project"
+        }
+      ]
+    },
+    {
+      "id": "assets",
+      "title": "Assets",
+      "blocks": [
+        {
+          "kind": "files",
+          "title": "Project assets"
+        }
+      ]
+    },
+    {
+      "id": "paint",
+      "title": "Paint",
+      "blocks": [
+        {
+          "kind": "action",
+          "action": "paint",
+          "title": "Paint a project"
+        }
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "media.paint@1",
+      "description": "Paint an image from a creative brief and return its stored asset ID.",
+      "inputs": [
+        {
+          "id": "prompt",
+          "label": "Prompt",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "id": "asset",
+          "label": "Asset",
+          "type": "file",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "paint",
+      "label": "Paint artwork",
+      "entity": "projects",
+      "capability": "media.paint@1",
+      "inputs": {
+        "prompt": "brief"
+      },
+      "outputs": {
+        "artwork": "asset"
+      },
+      "roles": [
+        "owner"
+      ]
+    }
+  ]
+}

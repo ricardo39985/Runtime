@@ -1,13 +1,17 @@
-# Implementation evidence — 2026-10-03
+# General application engine — verification record
 
-Local GCC14/CMake checks: 43 C++ domain assertions passed, including money, CSV/date validation, DAG checks, exact approval, tenant/role rejection and conservative routing. The same suite passed AddressSanitizer and UndefinedBehaviorSanitizer. Thirteen isolated Jev adapter tests passed with mocked transport; no model network calls were made. Bash/Python syntax and the PostgreSQL/OpenSSL platform header syntax checks passed.
+Work branch: feat/general-application-engine. Main has not been merged or deployed.
 
-GitHub Actions run 37126399802 passed Node24/TypeScript and Svelte checks, the web build, Jev tests and C++ domain/sanitizer suites. It generated and committed the dependency lock at 558a02080062073f538699ef720b4312c1181637. Its Docker server build failed at the JSON-to-Approval conversion; HTTP/RLS/browser suites did not run in that attempt.
+The invoice-specific executable path has been replaced in this branch by a general AppSpec-driven server and renderer. Native AppSpec validation, generic record/space/role API, revisions, private object storage/compression and capability dependency handling are implemented. Optional natural-language composition produces full application definitions through the configured bridge, rather than picking a fixture.
 
-The follow-up correction uses explicit typed JSON extraction, adds the job-lock UPDATE privilege through migration002, and applies all migrations on fresh local databases. An existing local database can apply the correction with scripts/migrate-local.sh.
+## Executed locally
 
-Full-stack verification requires a subsequent green CI run. The authoring container has no Docker daemon or dependency-download access; local isolated passes are not full-stack proof. Inspect the actual latest CI result.
+37 application-core tests, 17 lossless-object-storage tests, 5 integer-budget tests and 11 provider-composition contract tests passed. Application and storage native tests were also exercised with AddressSanitizer/UndefinedBehaviorSanitizer. Provider transport was mocked; no live model calls were made. Local Python and Bash syntax checks passed.
 
-Unavailable: production/live startup, real OIDC, live email/calendar writes, connected generative planning, billable routing, saved-app execution/schedules, cloud deployment and backup restoration. Simulated receipts are explicitly labeled. No T00–T24 task is declared fully complete because code or mocks exist.
+## Requires actual CI evidence
 
-Next: full-stack verification, then identity/grants, encrypted credential broker and durable external dispatch, followed by model budgets/planning and the remaining real-account demonstrations.
+The authoring environment has no Docker daemon, dependency-download connectivity or nlohmann headers. New C++ JSON/HTTP server compilation, TypeScript/Svelte checking, real PostgreSQL migrations and RLS, API/capability/file behavior, restart persistence and browser rendering must be verified in the network-enabled CI runner. Pending tests must not be described as passed. This record will be updated with observed results.
+
+## Not claimed
+
+Painting, arbitrary remote/side-effect abilities, general workflow/rule coverage, real public authentication/onboarding, R2, large/resumable uploads, full asset deletion/retention, production encryption/restore or a deployment. The present local storage limits and UI vocabulary are explicit. A live model account and owner-authorized billable acceptance are still needed to verify end-to-end natural-language composition.
