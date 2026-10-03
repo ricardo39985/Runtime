@@ -1,122 +1,99 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import Workspace from '$lib/Workspace.svelte';
-  import type { Run, RunSummary, RunEvent } from '$lib/types';
-  import '../style.css';
-  let token = $state(''), authenticated = $state(false), busy = $state(false), error = $state('');
-  let tab = $state('workspace'), title = $state('Overdue invoice follow-up'), days = $state(14), csv = $state('');
-  let run = $state<Run | null>(null), history = $state<RunSummary[]>([]), events = $state<RunEvent[]>([]);
-  let acknowledged = $state(false), edits = $state<Record<number, string>>({});
-  let pendingKey: { fingerprint: string; key: string } | null = null;
-  let dirty = $derived(Object.keys(edits).length > 0);
-  let active = $derived(!!run && ['queued', 'preparing', 'executing'].includes(run.status));
-  async function api<T>(path: string, method = 'GET', body?: unknown, key?: string): Promise<T> {
-    const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-    if (body !== undefined) headers['content-type'] = 'application/json';
-    if (key) headers['idempotency-key'] = key;
-    const response = await fetch(`/api/v1/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(10000) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message ?? `Request failed (${response.status}).`);
-    return data as T;
-  }
-  async function attempt(operation: () => Promise<void>) {
-    if (busy) return; busy = true; error = '';
-    try { await operation(); } catch (failure) { error = failure instanceof Error ? failure.message : 'Request failed.'; } finally { busy = false; }
-  }
-  async function refreshHistory() { history = await api<RunSummary[]>('runs'); }
-  async function openRun(id: string) {
-    run = await api<Run>(`runs/${id}`); events = await api<RunEvent[]>(`runs/${id}/events`);
-    edits = {}; acknowledged = false; tab = 'workspace';
-  }
-  function login() { void attempt(async () => { await api('meta'); authenticated = true; const sample = await api<{csv: string}>('sample'); csv = sample.csv; await refreshHistory(); }); }
-  function start() { void attempt(async () => {
-    const body = {schema_version: 1, title, min_days: days, csv}; const fingerprint = JSON.stringify(body);
-    if (pendingKey?.fingerprint !== fingerprint) pendingKey = {fingerprint, key: crypto.randomUUID()};
-    run = await api<Run>('requests', 'POST', body, pendingKey!.key); pendingKey = null;
-    edits = {}; events = []; acknowledged = false; await refreshHistory();
-  }); }
-  function saveDraft(index: number) { void attempt(async () => {
-    if (!run) return;
-    run = await api<Run>(`runs/${run.id}/drafts`, 'PATCH', {version: run.version, index, body: edits[index]});
-    const next = {...edits}; delete next[index]; edits = next; acknowledged = false;
-  }); }
-  function approve() { void attempt(async () => {
-    if (!run || dirty || !acknowledged) return;
-    run = await api<Run>(`runs/${run.id}/approve`, 'POST', {version: run.version, proposal_hash: run.proposal_hash, snapshot_ack: acknowledged});
-    await refreshHistory();
-  }); }
-  async function importFile(event: Event) {
-    const file = (event.currentTarget as HTMLInputElement).files?.[0]; if (!file) return;
-    await attempt(async () => { if (file.size > 256 * 1024) throw new Error('CSV limit is 256 KiB.'); csv = await file.text(); });
-  }
-  onMount(() => {
-    let polling = false;
-    const timer = setInterval(async () => {
-      if (!authenticated || !run || !active || polling || busy) return;
-      const id = run.id; polling = true;
-      try {
-        const next = await api<Run>(`runs/${id}`); const nextEvents = await api<RunEvent[]>(`runs/${id}/events`);
-        if (run?.id === id) { run = next; events = nextEvents; }
-        await refreshHistory();
-      } catch (failure) { error = failure instanceof Error ? failure.message : 'Reconnect failed.'; }
-      finally { polling = false; }
-    }, 1000);
-    return () => clearInterval(timer);
-  });
+ import ApplicationField from '$lib/ApplicationField.svelte';
+ import {defaults,visible,size,type AppDocument,type AppSpec,type AppRecord,type Asset,type PageOfRecords,type Scalar,type Entity,type Block,type Action} from '$lib/application-types';
+ import '../studio.css';
+ type Summary={id:string;name:string;revision:number};
+ let token=$state(''),signedIn=$state(false),busy=$state(false),error=$state(''),notice=$state('');
+ let apps=$state<Summary[]>([]),current=$state<AppDocument|null>(null),space=$state(''),page=$state(''),section=$state('applications');
+ let rows=$state<Record<string,PageOfRecords>>({}),assets=$state<Asset[]>([]),forms=$state<Record<string,Record<string,Scalar>>>({}),editing=$state<Record<string,AppRecord>>({}),selected=$state<Record<string,string>>({});
+ let brief=$state(''),definition=$state(''),review=$state<{valid:boolean;entities:number;pages:number;capabilities:AppDocument['capabilities']}|null>(null),editingSchema=$state(false),events=$state<{sequence:string;kind:string;at:string}[]>([]);
+ let planner=$state<{configured:boolean;model:string;ceiling_microusd:string}|null>(null),canBuild=$state(false);
+ let pendingGeneration:{fingerprint:string;key:string}|null=null,pendingPublish:{fingerprint:string;key:string}|null=null;
+ const role=$derived(current?.spaces.find(s=>s.id===space)?.role??'');
+ const activePage=$derived(current?.spec.pages.find(p=>p.id===page));
+ const storageRead=$derived((current?.spec.storage?.read_roles??['owner']).includes(role));
+ const storageWrite=$derived((current?.spec.storage?.write_roles??['owner']).includes(role));
+ const missing=$derived(current?.capabilities.filter(c=>c.status!=='available')??[]);
+ const base=$derived(current?`apps/${current.id}/spaces/${space}`:'');
+ async function api<T>(path:string,method='GET',body?:unknown,key?:string):Promise<T>{
+  const headers:Record<string,string>={authorization:`Bearer ${token}`};if(body!==undefined)headers['content-type']='application/json';if(key)headers['idempotency-key']=key;
+  const response=await fetch(`/api/v1/studio/${path}`,{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(path==='generation'?115000:15000)});
+  const data=await response.json();if(!response.ok)throw new Error(data.error?.message??`Request failed (${response.status}).`);return data as T;
+ }
+ async function work(fn:()=>Promise<void>){if(busy)return;busy=true;error='';notice='';try{await fn();}catch(e){error=e instanceof Error?e.message:'The operation failed.';}finally{busy=false;}}
+ async function refreshApps(){apps=await api<Summary[]>('apps');}
+ async function login(){await work(async()=>{const meta=await api<{can_build:boolean}>('meta');canBuild=meta.can_build;signedIn=true;await refreshApps();if(canBuild)planner=await api('generation/config');});}
+ async function refreshData(){if(!current||!space)return;const loaded:Record<string,PageOfRecords>={};for(const entity of current.spec.entities)if(entity.read_roles.includes(role))loaded[entity.id]=await api(`${base}/records/${entity.id}`);rows=loaded;if(storageRead)assets=await api(`${base}/assets`);else assets=[];if(role==='owner')events=await api(`${base}/events`);else events=[];}
+ async function openApp(id:string){current=await api<AppDocument>(`apps/${id}`);space=current.spaces[0]?.id??'';page=current.spec.pages[0]?.id??'';section='application';forms={};editing={};selected={};editingSchema=false;for(const entity of current.spec.entities)forms[entity.id]=defaults(entity.fields);await refreshData();}
+ function newApplication(){current=null;section='builder';definition='';brief='';review=null;editingSchema=false;pendingPublish=null;pendingGeneration=null;}
+ function editApplication(){if(!current)return;definition=JSON.stringify(current.spec,null,2);review=null;editingSchema=true;section='builder';brief='';}
+ async function inspect(){await work(async()=>{review=await api('compile','POST',JSON.parse(definition));});}
+ async function generate(){await work(async()=>{const payload={brief,...(editingSchema&&current?{application_id:current.id}:{})};const fingerprint=JSON.stringify(payload);if(pendingGeneration?.fingerprint!==fingerprint)pendingGeneration={fingerprint,key:crypto.randomUUID()};
+  const result=await api<{state:string;result:{spec?:AppSpec;error?:string}}>('generation','POST',payload,pendingGeneration!.key);
+  if(result.state!=='complete'||!result.result.spec)throw new Error(result.result.error??'Generation is unresolved. The same request will not be automatically resent.');
+  definition=JSON.stringify(result.result.spec,null,2);review=await api('compile','POST',result.result.spec);notice='Application definition generated. Review its structure and dependencies before publishing.';
+ });}
+ async function publish(){await work(async()=>{const spec=JSON.parse(definition);await api('compile','POST',spec);let published:AppDocument;
+  if(editingSchema&&current)published=await api(`apps/${current.id}/revisions`,'POST',{expected_revision:current.revision,spec});
+  else{if(pendingPublish?.fingerprint!==definition)pendingPublish={fingerprint:definition,key:crypto.randomUUID()};published=await api('apps','POST',spec,pendingPublish!.key);pendingPublish=null;}
+  await refreshApps();await openApp(published.id);notice='Application published. UI and persistent data are ready; unresolved abilities remain visible.';
+ });}
+ async function importDefinition(event:Event){const file=(event.currentTarget as HTMLInputElement).files?.[0];if(!file)return;await work(async()=>{if(file.size>512*1024)throw new Error('Application definition exceeds 512 KiB.');definition=await file.text();review=await api('compile','POST',JSON.parse(definition));});}
+ function entityFor(block:Block):Entity|undefined{return current?.spec.entities.find(e=>e.id===block.entity);}
+ function actionFor(block:Block):Action|undefined{return current?.spec.actions.find(a=>a.id===block.action);}
+ function startEdit(entity:Entity,record:AppRecord){editing={...editing,[entity.id]:record};forms={...forms,[entity.id]:{...record.values}};const formPage=current?.spec.pages.find(p=>p.blocks.some(b=>b.kind==='form'&&b.entity===entity.id));if(formPage)page=formPage.id;else notice='This application has no form for that entity; add one through its definition.';}
+ async function save(entity:Entity){await work(async()=>{const edit=editing[entity.id];if(edit)await api(`${base}/records/${entity.id}/${edit.id}`,'PATCH',{expected_version:edit.version,values:forms[entity.id]});else await api(`${base}/records/${entity.id}`,'POST',{values:forms[entity.id]},crypto.randomUUID());
+  const next={...editing};delete next[entity.id];editing=next;forms={...forms,[entity.id]:defaults(entity.fields)};await refreshData();notice='Record saved.';
+ });}
+ async function remove(entity:Entity,record:AppRecord){if(!window.confirm('Delete this record? References from other records will prevent deletion.'))return;await work(async()=>{await api(`${base}/records/${entity.id}/${record.id}/delete`,'POST',{expected_version:record.version});await refreshData();});}
+ async function more(entity:Entity){await work(async()=>{const cursor=rows[entity.id]?.next_cursor;if(!cursor)return;const next=await api<PageOfRecords>(`${base}/records/${entity.id}?after=${cursor}`);rows={...rows,[entity.id]:{items:[...rows[entity.id].items,...next.items],next_cursor:next.next_cursor}};});}
+ async function invoke(action:Action){await work(async()=>{const record=rows[action.entity]?.items.find(r=>r.id===selected[action.id]);if(!record)throw new Error('Select a record.');await api(`${base}/actions/${action.id}/invoke`,'POST',{record_id:record.id,expected_version:record.version},crypto.randomUUID());await refreshData();notice='Ability completed and its validated result was saved.';});}
+ async function upload(event:Event){const file=(event.currentTarget as HTMLInputElement).files?.[0];if(!file)return;await work(async()=>{if(file.size>(current?.spec.storage?.max_file_bytes??8388608))throw new Error('File exceeds the application upload limit.');const reply=await fetch(`/api/v1/studio/${base}/assets/upload?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/octet-stream','idempotency-key':crypto.randomUUID()},body:file,signal:AbortSignal.timeout(30000)});const result=await reply.json();if(!reply.ok)throw new Error(result.error?.message??'Upload failed.');await refreshData();notice=`${file.name} stored with ${result.codec} encoding and a verified SHA-256 checksum.`;});}
+ async function download(asset:Asset){await work(async()=>{const reply=await fetch(`/api/v1/studio/${base}/assets/${asset.id}/content`,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});if(!reply.ok)throw new Error('File could not be read and verified.');const blob=await reply.blob();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=asset.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
+ async function addSpace(){const name=window.prompt('Name this separate customer data space:');if(!name)return;await work(async()=>{if(!current)return;const created=await api<{id:string}>(`apps/${current.id}/spaces`,'POST',{name});current=await api(`apps/${current.id}`);space=created.id;forms={};editing={};for(const entity of current!.spec.entities)forms[entity.id]=defaults(entity.fields);await refreshData();});}
 </script>
-<svelte:head><title>Runtime — Your operational workspace</title><meta name="description" content="Runtime development workspace: validated workflows, generated interfaces, and explicit approvals."/></svelte:head>
-<div class="app-shell">
-  <aside class="sidebar">
-    <a href="/" class="brand" aria-label="Runtime home"><span class="brand-mark">r<span>_</span></span>Runtime<span class="version">0.1</span></a>
-    <div class="workspace-switch"><span class="avatar">D</span><div>Development<small>Personal workspace</small></div><span class="chevron">⌄</span></div>
-    <div class="nav-label">WORKSPACE</div>
-    <nav aria-label="Main navigation">
-      <button class:chosen={tab === 'workspace'} onclick={() => tab = 'workspace'}><span>▦</span>Overview</button>
-      <button class:chosen={tab === 'history'} onclick={() => {tab = 'history'; if (authenticated) void attempt(refreshHistory);}}><span>↻</span>Run history</button>
-      <button class:chosen={tab === 'connections'} onclick={() => tab = 'connections'}><span>⌘</span>Connections</button>
-    </nav>
-    <div class="sidebar-bottom"><span class="status-dot"></span>Local development<small>Fixture providers · no external actions</small></div>
-  </aside>
-  <main>
-    <header class="topbar"><div>Workspace <span>/</span> {tab === 'history' ? 'Run history' : tab === 'connections' ? 'Connections' : 'Overview'}</div><span class="environment">DEVELOPMENT</span></header>
-    <div class="content">
-      {#if error}<div class="error" role="alert">{error}<button aria-label="Dismiss error" onclick={() => error = ''}>×</button></div>{/if}
-      {#if !authenticated}
-        <section class="welcome"><div class="eyebrow">YOUR SOFTWARE. ASSEMBLED AROUND YOU.</div><h1>A workspace for<br/>what needs doing.</h1><p>Start with the first working capability: turn an invoice snapshot into a reviewable follow-up workflow.</p>
-          <form class="panel login" onsubmit={(e) => {e.preventDefault(); login();}}><h2>Open local workspace</h2><p>Use the development token in your local <code>.env</code> file. Google sign-in is not implemented in this milestone.</p><label for="token">Development access token</label><input id="token" type="password" bind:value={token} autocomplete="off" required minlength="32" placeholder="Paste your local token"/><button class="primary" disabled={busy}>{busy ? 'Opening…' : 'Open workspace'}<span>→</span></button></form>
-          <div class="trust-note">No model calls. No emails sent. No paid infrastructure.</div>
-        </section>
-      {:else if tab === 'connections'}
-        <div class="section-title"><div class="eyebrow">CAPABILITIES</div><h1>Connections</h1><p>Only the local CSV workflow is enabled. Provider access is never simulated as a live connection.</p></div>
-        <div class="connection-grid">{#each [['CSV snapshots','Enabled locally','Validated imports and deterministic calculations.'],['Jev routing','Adapter written · not connected','Conservative routing remains active until credentials and evaluations are configured.'],['Google Workspace','Not connected','OIDC, Gmail, Calendar, and Sheets are later implementation gates.'],['Stripe','Not connected','Read-only invoice access is planned; no payments or refunds.']] as item}<article class="panel connection"><span class="connection-icon">{item[0].slice(0,1)}</span><h3>{item[0]}</h3><span class="badge">{item[1]}</span><p>{item[2]}</p></article>{/each}</div>
-      {:else if tab === 'history'}
-        <div class="section-title"><div class="eyebrow">EXECUTION RECORD</div><h1>Run history</h1><p>Persisted in PostgreSQL. Reopening a run does not execute it again.</p></div>
-        <section class="panel history">{#each history as item}<button onclick={() => void attempt(() => openRun(item.id))}><div><strong>{item.title}</strong><small>{item.id.slice(0,12)}</small></div><span class="badge">{item.status.replaceAll('_',' ')}</span><span>→</span></button>{/each}{#if history.length === 0}<p class="empty">Your first run will appear here.</p>{/if}</section>
-      {:else}
-        <div class="section-title"><div><div class="eyebrow">FROM REQUEST TO REVIEWED ACTION</div><h1>Your work, in one place.</h1><p>A deterministic first workflow. Natural-language planning is not connected yet.</p></div><span class="badge subtle">C++ runtime</span></div>
-        <section class="panel composer"><div class="composer-title"><span class="workflow-icon">↗</span><div><h2>Invoice follow-up</h2><p>Import a snapshot. Review a generated workspace. Approve a local simulation.</p></div></div>
-          <div class="form-row"><div class="field grow"><label for="title">Workflow title</label><input id="title" bind:value={title} maxlength="160"/></div><div class="field"><label for="days">More than this many days overdue</label><input id="days" type="number" bind:value={days} min="0" max="3650"/></div><button class="primary" onclick={start} disabled={busy || active || !csv || !title}>{busy ? 'Preparing…' : 'Build workspace'}<span>→</span></button></div>
-          <details><summary>Source data <span>CSV snapshot · inspect or replace</span></summary><label for="csv">Invoice CSV</label><textarea id="csv" bind:value={csv} rows="5" spellcheck="false"></textarea><input type="file" aria-label="Import invoice CSV" accept=".csv,text/csv" onchange={importFile}/><small>Amounts use integer minor units. No automatic currency conversion.</small></details>
-        </section>
-        {#if run}
-          <div class="run-heading"><div><span class="status-dot" class:running={active}></span><strong>{run.title ?? title}</strong><span class="badge">{run.status.replaceAll('_',' ')}</span></div>{#if ['queued','awaiting_approval'].includes(run.status)}<button class="quiet" disabled={busy} onclick={() => void attempt(async () => {if(run) run = await api<Run>(`runs/${run.id}/cancel`, 'POST', {});})}>Cancel run</button>{/if}</div>
-          {#if active}<div class="working" role="status"><span class="loader"></span>{run.status === 'executing' ? 'Recording the local simulation…' : 'Validating source data and assembling your workspace…'}</div>{/if}
-          {#if run.error}<div class="error" role="alert">{run.error}</div>{/if}
-          {#if run.ui && run.bindings}
-            <div class="results-grid"><div class="workspace-result"><Workspace spec={run.ui} bindings={run.bindings}/><div class="source-note">CSV snapshot · evaluated on {run.source?.as_of} · {run.excluded ?? 0} records excluded. This is not a live accounting feed.</div>
-              <section class="panel timeline"><h3>Run activity</h3>{#each events as item}<div class="event"><span class="event-dot"></span><span>{item.kind.replaceAll('_',' ')}</span><small>{new Date(item.at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</small></div>{/each}</section>
-            </div><aside class="panel approval"><div class="panel-heading"><h3>{run.status === 'completed' ? 'Workflow complete' : 'Review before action'}</h3><span class="count">{run.drafts?.length ?? 0}</span></div>
-              <p class="approval-intro">Simulation only. Approval creates local receipts; it cannot send email.</p>
-              {#each run.drafts ?? [] as draft, index}<div class="draft"><div class="draft-label">MESSAGE {index + 1} <span>{draft.invoice_id}</span></div><strong>{draft.to}</strong><p class="subject">{draft.subject}</p><label class="sr-only" for={`draft-${index}`}>Message body {index + 1}</label><textarea id={`draft-${index}`} value={edits[index] ?? draft.body} disabled={run.status !== 'awaiting_approval' || busy} oninput={(event) => {edits = {...edits, [index]: event.currentTarget.value}; acknowledged = false;}} rows="6" maxlength="10000"></textarea>{#if edits[index] !== undefined}<button class="secondary" disabled={busy} onclick={() => saveDraft(index)}>Save draft changes</button>{/if}</div>{/each}
-              {#if run.status === 'awaiting_approval'}<div class="approval-footer"><label class="acknowledgement"><input type="checkbox" bind:checked={acknowledged} disabled={dirty}/><span>I reviewed these messages and understand that the source is a CSV snapshot.</span></label><button class="primary full" disabled={!acknowledged || dirty || busy} onclick={approve}>Approve simulation <span>→</span></button><small>Exact content · version {run.version} · approval expires after 30 minutes</small></div>
-              {:else if run.status === 'completed'}<div class="completion" role="status"><strong>{run.receipts?.length ?? 0} simulated receipts</strong><span>0 emails sent. No external systems changed.</span></div>{/if}
-              {#if (run.not_in_batch ?? 0) > 0}<p class="source-note">{run.not_in_batch} additional invoices are outside this ten-action batch.</p>{/if}
-            </aside></div>
-          {/if}
-        {:else}
-          <div class="empty-state"><div class="empty-icon">▦</div><h2>Your next workspace starts here.</h2><p>The sample contains two overdue invoices and one paid invoice.<br/>Build the workspace to see validation, review, and approval working together.</p><div class="steps"><span>01 &nbsp; Read</span><i>→</i><span>02 &nbsp; Assemble</span><i>→</i><span>03 &nbsp; Review</span><i>→</i><span>04 &nbsp; Simulate</span></div></div>
-        {/if}
-      {/if}
-    </div>
-  </main>
+<svelte:head><title>Runtime — Build your software</title><meta name="description" content="Describe your application. Runtime provides its interface, persistent data and lossless asset storage, with abilities added independently."/></svelte:head>
+<div class="studio-shell">
+ <aside class="studio-sidebar"><a class="studio-brand" href="/"><span>r_</span>Runtime<small>0.2</small></a><div class="side-heading">APPLICATION STUDIO</div>
+  {#if signedIn}<button class:active={section==='applications'} onclick={()=>section='applications'}>All applications</button>{#if canBuild}<button class="new-app" onclick={newApplication}>＋ Build an application</button>{/if}
+   <div class="side-heading">YOUR APPLICATIONS</div>{#each apps as app}<button class:active={current?.id===app.id&&section==='application'} onclick={()=>void work(()=>openApp(app.id))}>{app.name}</button>{/each}
+   {#if current&&section==='application'}<div class="side-heading">{current.spec.name}</div>{#each current.spec.pages as item}<button class:page-active={page===item.id} onclick={()=>page=item.id}>{item.title}</button>{/each}<button class:page-active={page==='_abilities'} onclick={()=>page='_abilities'}>Abilities <span>{missing.length||''}</span></button><button class:page-active={page==='_activity'} onclick={()=>page='_activity'}>Activity</button>{/if}
+  {/if}<div class="sidebar-foot"><i></i>Local development<small>Real data · private object storage</small></div>
+ </aside>
+ <main><header class="studio-header"><span>Runtime <b>/</b> {current&&section==='application'?current.spec.name:'Application studio'}</span><span class="dev-label">DEVELOPMENT</span></header>
+ <div class="studio-content">
+  {#if error}<div class="message error" role="alert">{error}<button aria-label="Dismiss error" onclick={()=>error=''}>×</button></div>{/if}{#if notice}<div class="message success" role="status">{notice}</div>{/if}
+  {#if !signedIn}
+   <section class="studio-welcome"><div class="eyebrow">SOFTWARE, BUILT AROUND YOUR INTENT.</div><h1>The application you need.<br/>Not another template.</h1><p>One foundation for your interface, data and files. Add specialized abilities without rebuilding the application.</p>
+    <form class="surface login-card" onsubmit={e=>{e.preventDefault();void login();}}><h2>Open your studio</h2><label for="token">Development access token</label><input id="token" type="password" bind:value={token} required minlength="32" autocomplete="off" placeholder="Token from your local .env"/><button class="primary" disabled={busy}>Open studio <span>→</span></button><small>This local build uses development identities. Public sign-in is not yet enabled.</small></form>
+   </section>
+  {:else if section==='applications'}
+   <div class="section-heading"><div><div class="eyebrow">YOUR SOFTWARE LIBRARY</div><h1>Applications</h1><p>Independent data models, pages and abilities—running on one platform.</p></div>{#if canBuild}<button class="primary" onclick={newApplication}>Build an application <span>＋</span></button>{/if}</div>
+   {#if apps.length===0}<div class="surface empty-library"><div class="empty-glyph">▦</div><h2>Start with what you need.</h2><p>There is no predefined workflow catalog. Generate or import an application definition, then publish it.</p>{#if canBuild}<button class="primary" onclick={newApplication}>Create your first application →</button>{/if}</div>
+   {:else}<div class="application-grid">{#each apps as app}<button class="surface application-card" onclick={()=>void work(()=>openApp(app.id))}><span class="app-monogram">{app.name.slice(0,1)}</span><h2>{app.name}</h2><p>Published application · revision {app.revision}</p><span class="card-arrow">Open application →</span></button>{/each}</div>{/if}
+  {:else if section==='builder'}
+   <div class="section-heading"><div><div class="eyebrow">{editingSchema?'EVOLVE YOUR APPLICATION':'FROM INTENT TO APPLICATION'}</div><h1>{editingSchema?`Update ${current?.spec.name}`:'What should we build?'}</h1><p>Describe the complete application. Missing abilities remain explicit dependencies, not reasons to discard the rest.</p></div></div>
+   <section class="surface composition"><label for="brief">Describe your application</label><textarea id="brief" bind:value={brief} maxlength="12000" rows="5" placeholder="Who uses it? What do they store, see and do? Describe its pages, permissions and specialized abilities."></textarea><div class="compose-footer"><span>{planner?.configured?`${planner.model} · up to $${(Number(planner.ceiling_microusd)/1000000).toFixed(2)} reserved`:'Planner not configured. Import a definition below, or configure your model connection.'}</span><button class="primary" onclick={()=>void generate()} disabled={busy||!brief.trim()||!planner?.configured}>{busy?'Working…':'Generate application'} →</button></div></section>
+   <section class="surface definition-panel"><div class="panel-heading"><h2>Application definition</h2><label class="file-button">Import JSON<input aria-label="Import application definition" type="file" accept=".json,application/json" onchange={importDefinition}/></label></div><p>Generated structure, not arbitrary executable code. You can inspect and edit every entity, page, role and capability.</p><label class="sr-only" for="definition">Application JSON</label><textarea id="definition" bind:value={definition} oninput={()=>review=null} rows="12" spellcheck="false" placeholder="Generate or import an ApplicationSpec JSON definition."></textarea><div class="definition-actions"><button class="secondary" onclick={()=>void inspect()} disabled={!definition||busy}>Validate definition</button><button class="primary" onclick={()=>void publish()} disabled={!definition||busy}>{editingSchema?'Publish revision':'Publish application'} →</button></div>
+    {#if review}<div class="review"><strong>Valid structure</strong><span>{review.entities} entities · {review.pages} pages</span>{#each review.capabilities as capability}<div class="dependency"><code>{capability.id}</code><span class:missing={capability.status!=='available'} class="ability-state">{capability.status}</span></div>{/each}<small>Unresolved abilities block their own actions only. Data, files and the rest of the application remain usable.</small></div>{/if}
+   </section>
+  {:else if current}
+   <div class="section-heading"><div><div class="eyebrow">PUBLISHED APPLICATION · REVISION {current.revision}</div><h1>{page==='_abilities'?'Abilities':page==='_activity'?'Activity':activePage?.title??current.spec.name}</h1><p>{current.spec.description}</p></div><div class="app-controls"><label class="sr-only" for="space">Customer data space</label><select id="space" disabled={busy} bind:value={space} onchange={()=>void work(async()=>{editing={};for(const e of current!.spec.entities)forms[e.id]=defaults(e.fields);await refreshData();})}>{#each current.spaces as s}<option value={s.id}>{s.name} · {s.role}</option>{/each}</select>{#if current.can_edit_schema}<button class="secondary" onclick={editApplication}>Edit application</button><button class="secondary" onclick={()=>void addSpace()}>＋ Data space</button>{/if}<button class="secondary" disabled={busy} onclick={()=>void work(refreshData)}>Refresh</button></div></div>
+   {#if missing.length>0&&page!=='_abilities'}<div class="dependency-note"><span>{missing.length} {missing.length===1?'ability is':'abilities are'} not installed.</span> Your application and saved data are still available.<button onclick={()=>page='_abilities'}>View dependencies →</button></div>{/if}
+   {#if !space}<div class="surface empty-library">No customer data spaces have been shared with this identity.</div>
+   {:else if page==='_abilities'}<div class="ability-list">{#each current.capabilities as capability}<article class="surface ability-card"><div><h2>{capability.id}</h2><span class:missing={capability.status!=='available'} class="ability-state">{capability.status}</span></div><p>{capability.description}</p>{#if capability.status!=='available'}<small>This contract is saved with the application. Registering a matching implementation resolves it without replacing the application or its records.</small>{/if}</article>{/each}{#if current.capabilities.length===0}<div class="surface empty-library">This application currently uses only the platform's interface, records and file storage.</div>{/if}</div>
+   {:else if page==='_activity'}<section class="surface activity"><h2>Application activity</h2>{#if role!=='owner'}<p>Activity is visible to data-space owners.</p>{:else}{#each events as event}<div><span>{event.kind}</span><small>{new Date(event.at).toLocaleString()}</small></div>{/each}{/if}</section>
+   {:else if activePage}<div class="page-blocks">{#each activePage.blocks as block,index}
+    {@const entity=entityFor(block)}{@const action=actionFor(block)}
+    {#if (block.kind==='table'||block.kind==='cards')&&entity&&entity.read_roles.includes(role)}
+     <section class="surface records"><div class="panel-heading"><h2>{block.title||entity.label}</h2><span class="record-count">{rows[entity.id]?.items.length??0} loaded</span></div>{#if block.kind==='cards'}<div class="record-cards">{#each rows[entity.id]?.items??[] as record}<article>{#each entity.fields.filter(f=>!block.fields?.length||block.fields.includes(f.id)) as field}<div><small>{field.label}</small><p>{visible(record.values[field.id])}</p></div>{/each}{#if entity.write_roles.includes(role)}<div class="row-actions"><button onclick={()=>startEdit(entity,record)}>Edit</button><button onclick={()=>void remove(entity,record)}>Delete</button></div>{/if}</article>{/each}</div>{:else}<div class="table-container"><table><thead><tr>{#each entity.fields.filter(f=>!block.fields?.length||block.fields.includes(f.id)) as field}<th>{field.label}</th>{/each}{#if entity.write_roles.includes(role)}<th>Actions</th>{/if}</tr></thead><tbody>{#each rows[entity.id]?.items??[] as record}<tr>{#each entity.fields.filter(f=>!block.fields?.length||block.fields.includes(f.id)) as field}<td title={String(visible(record.values[field.id]))}>{visible(record.values[field.id])}</td>{/each}{#if entity.write_roles.includes(role)}<td class="row-actions"><button onclick={()=>startEdit(entity,record)}>Edit</button><button onclick={()=>void remove(entity,record)}>Delete</button></td>{/if}</tr>{/each}</tbody></table></div>{/if}{#if !rows[entity.id]?.items.length}<p class="empty-records">No records yet.</p>{/if}{#if rows[entity.id]?.next_cursor}<button class="secondary load-more" onclick={()=>void more(entity)} disabled={busy}>Load more records</button>{/if}</section>
+    {:else if block.kind==='form'&&entity&&entity.write_roles.includes(role)}
+     <form class="surface entity-form" onsubmit={e=>{e.preventDefault();void save(entity);}}><div class="panel-heading"><h2>{editing[entity.id]?`Edit ${entity.label}`:block.title||`New ${entity.label}`}</h2>{#if editing[entity.id]}<button type="button" class="secondary" onclick={()=>{const next={...editing};delete next[entity.id];editing=next;forms[entity.id]=defaults(entity.fields);}}>Cancel edit</button>{/if}</div><div class="field-grid">{#each entity.fields.filter(f=>!block.fields?.length||block.fields.includes(f.id)) as field}<ApplicationField {field} prefix={`form-${index}`} bind:value={forms[entity.id][field.id]} records={field.target?rows[field.target]?.items??[]:[]} {assets}/>{/each}</div><button class="primary" disabled={busy}>Save record →</button></form>
+    {:else if block.kind==='files'&&storageRead}<section class="surface files"><div class="panel-heading"><h2>{block.title||'Files'}</h2>{#if storageWrite}<label class="file-button primary">Upload file<input aria-label="Upload file" type="file" onchange={upload} disabled={busy}/></label>{/if}</div><p class="storage-note">Private objects · lossless compression when beneficial · SHA-256 verified on read</p>{#each assets as asset}<div class="asset"><div><strong>{asset.filename}</strong><small>{size(asset.original_size)} original · {size(asset.stored_size)} stored · {asset.codec} · {asset.state}</small></div><button class="secondary" onclick={()=>void download(asset)} disabled={busy||asset.state!=='ready'}>Download</button></div>{/each}{#if assets.length===0}<p class="empty-records">No files uploaded.</p>{/if}{#if assets.length===200}<p class="storage-note">Showing the 200 most recent files.</p>{/if}</section>
+    {:else if block.kind==='action'&&action&&action.roles.includes(role)}
+     {@const ability=current.capabilities.find(c=>c.id===action.capability)}<section class="surface ability-action"><div class="panel-heading"><h2>{block.title||action.label}</h2><span class:missing={ability?.status!=='available'} class="ability-state">{ability?.status??'missing'}</span></div><p>{current.spec.capabilities.find(c=>c.id===action.capability)?.description}</p><label for={`action-${index}`}>Target record</label><select id={`action-${index}`} bind:value={selected[action.id]}><option value="">Choose a record…</option>{#each rows[action.entity]?.items??[] as record}<option value={record.id}>{Object.values(record.values).find(v=>typeof v==='string')??record.id}</option>{/each}</select><button class="primary" onclick={()=>void invoke(action)} disabled={busy||ability?.status!=='available'||!selected[action.id]}>{action.label} →</button>{#if ability?.status!=='available'}<small>Requires {action.capability}. The action cannot run until that ability is installed.</small>{/if}</section>
+    {/if}
+   {/each}</div>{/if}
+  {/if}
+ </div></main>
 </div>

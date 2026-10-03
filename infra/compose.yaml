@@ -4,8 +4,8 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_DB: runtime
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?Run scripts/bootstrap.sh first}
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run scripts/bootstrap.sh first}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Run scripts/bootstrap.sh}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run scripts/bootstrap.sh}
     volumes:
       - runtime_pg:/var/lib/postgresql/data
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/001-init.sh:ro
@@ -17,39 +17,55 @@ services:
       retries: 30
     restart: unless-stopped
   bridge:
+    image: runtime-local-bridge
     build:
       context: ..
       dockerfile: infra/docker/bridge.Dockerfile
     environment:
       APP_ENV: development
-      PROVIDER_MODE: fixture
-      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Run scripts/bootstrap.sh first}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Run scripts/bootstrap.sh}
+      PLANNER_ENABLED: ${PLANNER_ENABLED:-false}
+      PLANNER_MODEL: ${PLANNER_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     healthcheck:
       test: [CMD, node, -e, "fetch('http://localhost:8081/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
+      interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
   core:
+    image: runtime-local-core
     build:
       context: ..
       dockerfile: infra/docker/core.Dockerfile
     ports:
       - '127.0.0.1:${RUNTIME_PORT:-8080}:8080'
+    volumes:
+      - runtime_objects:/var/lib/runtime/objects
     environment:
       APP_ENV: development
-      PROVIDER_MODE: fixture
       DATABASE_URL: postgresql://runtime_app:${APP_DB_PASSWORD}@db:5432/runtime
-      DEV_API_TOKEN: ${DEV_API_TOKEN:?Run scripts/bootstrap.sh first}
+      DEV_API_TOKEN: ${DEV_API_TOKEN:?Run scripts/bootstrap.sh}
+      DEV_READER_TOKEN: ${DEV_READER_TOKEN:-}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Run scripts/bootstrap.sh}
       APP_ORIGIN: http://localhost:${RUNTIME_PORT:-8080}
+      PLANNER_ENABLED: ${PLANNER_ENABLED:-false}
+      PLANNER_MODEL: ${PLANNER_MODEL:-}
+      PLANNER_INPUT_MICROUSD_PER_MILLION: ${PLANNER_INPUT_MICROUSD_PER_MILLION:-0}
+      PLANNER_OUTPUT_MICROUSD_PER_MILLION: ${PLANNER_OUTPUT_MICROUSD_PER_MILLION:-0}
+      GENERATION_CEILING_MICROUSD: ${GENERATION_CEILING_MICROUSD:-250000}
+      MODEL_MONTHLY_MICROUSD: ${MODEL_MONTHLY_MICROUSD:-100000000}
     depends_on:
       db:
+        condition: service_healthy
+      bridge:
         condition: service_healthy
     healthcheck:
       test: [CMD, curl, -fsS, http://localhost:8080/health/ready]
       interval: 5s
       timeout: 7s
-      retries: 20
+      retries: 30
     restart: unless-stopped
 volumes:
   runtime_pg:
+  runtime_objects:

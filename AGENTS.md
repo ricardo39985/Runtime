@@ -1,33 +1,27 @@
-# Runtime coding-agent instructions
+# Runtime engineering instructions
 
-Read docs/BUILD_PLAN.md, docs/TASKS.md, and evidence/implementation-status.md before continuing. The implementation plan is the target, not a declaration that features already work.
+## Product boundary — authoritative correction
 
-Preserve C++23/Drogon core, Svelte 5 UI, TypeScript provider bridge and PostgreSQL authoritative state. Do not replace the core with a JavaScript backend or add NATS, Valkey, gRPC, Kubernetes, generated code/Wasm, or local GPU inference without a justified approved architecture decision.
+Runtime is a general SaaS application builder, NOT a catalog of predefined workflows. Read docs/adr/0002-general-application-engine.md first. The owner explicitly requires universal UI, data persistence, storage/compression, and abilities that can be added independently. A missing paint implementation must leave projects, permissions, files, forms and saved records usable. Do not replace a requested app with a smaller unrelated workflow.
 
-The owner authorized the initial main push. Subsequent features use task branches unless explicitly instructed otherwise. Preserve concurrent changes, do not force-push shared branches, and obtain authorization for merges, billable provider calls, paid provisioning, real external sends, and production promotion.
+The executable now uses services/core/src/studio_main.cpp and the generic application engine. Legacy invoice code is historical, not a feature template or the active application server. Example definitions are data and test fixtures; never switch application behavior by example name.
 
-For each task: inspect dependencies and current code; add behavior and failure tests; implement one coherent change; execute checks; record commands, exit codes, commit, browser evidence and limitations. Compiler/test output—not a model opinion—determines pass/fail. Inspect rendered UI for frontend changes. Mocks, source files and screenshots do not prove live-provider integration. Mark missing credentials or account approvals BLOCKED_EXTERNAL and continue independent work rather than weakening acceptance.
+## Architecture
 
-## Invariants
+Preserve C++23/Drogon core, Svelte5/TypeScript UI, TypeScript/Node provider bridge and PostgreSQL authoritative state. ApplicationSpec describes typed entities/relations, roles, UI pages, capability dependencies/actions and storage policy. Capabilities have immutable versions and typed inputs/outputs; they cannot be marked installed without a real handler. Unknown handlers fail explicitly while independent application features remain available.
 
-The core owns identity, tenant context, grants, budgets, workflow state, approvals and execution authority. The bridge translates provider protocols; it cannot select new recipients, tenants, capabilities or spending limits. No generic credential retrieval API.
+Schema revisions preserve user data and IDs. Reject destructive or narrowing changes until an explicit reviewed migration is provided. Keep published definitions separate from individual customer data spaces. Authorization is server-derived, never a user-supplied role/tenant selector. Current fixed local development identities do not satisfy public OIDC/membership onboarding.
 
-Use a restricted application role, forced PostgreSQL RLS, composite tenant foreign keys and transaction-local tenant settings. Runtime roles must not own protected tables, be superusers or have BYPASSRLS. Test connection reuse and context reset. Audit records are append-only to the application.
+Keep forced PostgreSQL RLS, restricted application roles, composite scope foreign keys, transaction-local scope, audited changes, optimistic record/app versions and idempotent writes. Test concurrent updates and isolated spaces. The object store uses opaque keys rather than user paths, immutable bytes, finite decompression, checksums and a persistent volume; metadata carries authorization. Do not erase the volume or make uploads public to fix a test.
 
-The initial worker executes only deterministic local work and simulation in short transactions. Before external tools, implement leased/fenced dispatch, persisted intent, receipts and unknown-outcome reconciliation. Never hold a database transaction during provider/model I/O. Timeout does not prove an email was not sent. Never blindly retry an uncertain external write.
+No external provider calls inside database transactions. Current installed application abilities are reviewed pure handlers. Before remote side effects, add fenced dispatch, exact authorization, receipts and uncertain-outcome reconciliation. Timeouts do not prove a provider did nothing. Missing abilities are not an excuse for fabricated receipts.
 
-Approval binds the exact sender, recipient, content, source conditions, tenant, tool/version, proposal hash and expiry. Editing invalidates it. Recheck membership, grants, limits, approval and source conditions immediately before dispatch. Cancellation cannot undo a delivered message. Schedules cannot inherit permission for future sends.
+Natural-language composition produces an AppSpec preview, not a template ID. Validate all output. Model inference requires explicit configuration and durable worst-case usage reservation. No secrets in schemas, prompts, logs or screenshots. Unknown provider usage remains reserved; do not automatically repeat a costly uncertain call. Published CRUD must not require reasoning calls.
 
-Treat emails, files, CSV cells, model outputs and MCP descriptions as untrusted data. No arbitrary eval, HTML, JavaScript, SQL, shell execution, package installation, URL fetching or secret lookup. Render only registered components with server-owned data bindings. Unknown capabilities fail closed.
+No arbitrary generated SQL, HTML, JavaScript, shell commands, URLs or executables. Extend reviewed component/operation/capability registries when needed. User content and model output are untrusted data. Specialized compute belongs behind bounded authenticated capability interfaces, not eval.
 
-Use maintained cryptographic libraries. Encrypt credentials with authenticated encryption and versioned keys outside the database. Never put secrets/customer data in prompts, commits, screenshots, test fixtures or ordinary logs. Keep environments isolated.
+## Work and evidence
 
-Jev recommends a bounded processing route; it does not authorize actions, calculate invoices, or decide whether tests passed. Prefer deterministic functions and validated saved workflows. Keep lower-cost planning disabled until held-out evaluation passes. Reserve worst-case model usage before dispatch, including concurrency, reasoning, retries and repairs. Unknown usage stays reserved until reconciled. Never retry around a policy denial.
+The current feature branch is feat/general-application-engine. Preserve other changes. Do not merge main, provision paid services, enable billable calls, send real external messages or deploy production without explicit authorization. A request to implement code permits feature-branch code and ordinary CI, not production access.
 
-The example model YAML is not loaded by the fixture build. Probe actual account access and current model IDs/rates before activation. No silent model upgrades or unbounded agent loops.
-
-## Evidence and release
-
-Task evidence records task ID, commit, dependencies, changed contracts/migrations, commands/exit codes, deterministic and real-provider results, redacted browser evidence, failure/security cases, limitations, external blockers and next eligible task.
-
-No production claims before actual identity/isolation/dispatch/budget/live-provider/recovery gates pass. Build immutable images and promote the tested digest. After database restoration, pause external writes and reconcile the recovery window before resuming. Do not run destructive automatic rollback migrations. Report partial work honestly.
+Read evidence/implementation-status.md and docs/TASKS.md. Write tests, run real commands, inspect actual browser behavior and record exit codes. Do not call a mocked provider a live integration. Do not equate written code or a green isolated suite with a working deployment. Record external blockers without weakening acceptance. Follow through on CI failures and preserve executed evidence. Keep user data and secrets out of artifacts.

@@ -7,23 +7,27 @@ COPY services/bridge/package.json ./services/bridge/package.json
 COPY packages/contracts ./packages/contracts
 RUN pnpm install --frozen-lockfile && pnpm --filter @runtime/web check && pnpm --filter @runtime/web build
 
-FROM debian:trixie-slim AS cpp
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake ninja-build git curl ca-certificates zip unzip tar pkg-config autoconf automake libtool bison flex && rm -rf /var/lib/apt/lists/*
+FROM debian:trixie-slim AS cpp-deps
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake ninja-build git curl ca-certificates zip unzip tar pkg-config autoconf automake libtool bison flex python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN git clone https://github.com/microsoft/vcpkg.git .tools/vcpkg && cd .tools/vcpkg && git checkout 3cbc1db4d867ec83c89fba4c461321c11f78b5e3 && ./bootstrap-vcpkg.sh -disableMetrics
-COPY CMakeLists.txt CMakePresets.json vcpkg.json ./
+COPY vcpkg.json ./
 COPY infra/triplets ./infra/triplets
+RUN .tools/vcpkg/vcpkg install --triplet=x64-linux-runtime --overlay-triplets=/src/infra/triplets
+FROM cpp-deps AS cpp
+COPY CMakeLists.txt CMakePresets.json ./
 COPY services/core ./services/core
 COPY tests/unit ./tests/unit
-RUN cmake -S . -B build/server -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/src/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-linux-runtime -DVCPKG_OVERLAY_TRIPLETS=/src/infra/triplets && cmake --build build/server --parallel 2 && ctest --test-dir build/server --output-on-failure
+COPY examples ./examples
+RUN cmake -S . -B build/server -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/src/.tools/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-linux-runtime -DVCPKG_INSTALLED_DIR=/src/vcpkg_installed -DVCPKG_OVERLAY_TRIPLETS=/src/infra/triplets && cmake --build build/server --parallel 2 && ctest --test-dir build/server --output-on-failure
 
 FROM debian:trixie-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libstdc++6 libgcc-s1 tini && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libstdc++6 libgcc-s1 tini && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home runtime && mkdir -p /var/lib/runtime/objects && chown -R runtime:runtime /var/lib/runtime && chmod 700 /var/lib/runtime/objects
 WORKDIR /app
 COPY --from=cpp /src/build/server/runtime-core /app/runtime-core
 COPY --from=web /src/apps/web/build /app/web
 COPY packages/contracts /app/packages/contracts
-ENV WEB_ROOT=/app/web CONTRACTS_DIR=/app/packages/contracts BIND_ADDRESS=0.0.0.0 PORT=8080
+ENV WEB_ROOT=/app/web CONTRACTS_DIR=/app/packages/contracts OBJECT_ROOT=/var/lib/runtime/objects BIND_ADDRESS=0.0.0.0 PORT=8080
 USER runtime
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini","--"]
