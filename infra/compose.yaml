@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: runtime
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Run scripts/bootstrap.sh first}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run scripts/bootstrap.sh first}
+    volumes:
+      - runtime_pg:/var/lib/postgresql/data
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/001-init.sh:ro
+      - ../db/migrations:/migrations:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d runtime']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  bridge:
+    build:
+      context: ..
+      dockerfile: infra/docker/bridge.Dockerfile
+    environment:
+      APP_ENV: development
+      PROVIDER_MODE: fixture
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?Run scripts/bootstrap.sh first}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:8081/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  core:
+    build:
+      context: ..
+      dockerfile: infra/docker/core.Dockerfile
+    ports:
+      - '127.0.0.1:${RUNTIME_PORT:-8080}:8080'
+    environment:
+      APP_ENV: development
+      PROVIDER_MODE: fixture
+      DATABASE_URL: postgresql://runtime_app:${APP_DB_PASSWORD}@db:5432/runtime
+      DEV_API_TOKEN: ${DEV_API_TOKEN:?Run scripts/bootstrap.sh first}
+      APP_ORIGIN: http://localhost:${RUNTIME_PORT:-8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:8080/health/ready]
+      interval: 5s
+      timeout: 7s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  runtime_pg:

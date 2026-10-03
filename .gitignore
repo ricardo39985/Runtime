@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.tools/
+build/
+**/node_modules/
+**/.svelte-kit/
+apps/web/build/
+playwright-report/
+test-results/
+*.log
+__pycache__/
+apps/web/src/lib/ui-validator.generated.js

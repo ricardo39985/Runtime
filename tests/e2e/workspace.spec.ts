@@ -1,0 +1,35 @@
+import { test, expect } from '@playwright/test';
+test('review, edit, approve, and inspect a generated workspace', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByRole('heading', {name: 'Open local workspace'})).toBeVisible();
+  await page.getByLabel('Development access token').fill(process.env.DEV_API_TOKEN!);
+  await page.getByRole('button', {name: 'Open workspace'}).click();
+  await page.getByRole('button', {name: 'Build workspace'}).click();
+  await expect(page.getByRole('heading', {name: 'Invoices needing attention'})).toBeVisible();
+  await expect(page.getByText('USD 3,430.00')).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Approve simulation'})).toBeDisabled();
+  await page.getByLabel('Message body 1', {exact:true}).fill('Reviewed message for the local test only.');
+  await page.getByRole('button', {name: 'Save draft changes'}).click();
+  await expect(page.getByText('Exact content · version 2', {exact:false})).toBeVisible();
+  await page.screenshot({path:'evidence/screenshots/workspace-desktop.png',fullPage:true});
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', {name: 'Approve simulation'}).click();
+  await expect(page.getByText('2 simulated receipts', {exact:true})).toBeVisible();
+  await expect(page.getByText('0 emails sent. No external systems changed.', {exact:true})).toBeVisible();
+  await page.getByRole('button', {name: 'Run history'}).click();
+  await expect(page.getByRole('heading', {name: 'Run history'})).toBeVisible();
+  await page.getByRole('button', {name:'Connections'}).click();
+  await expect(page.getByRole('heading', {name:'Connections',exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('mobile layout has no horizontal page overflow', async ({page}) => {
+  await page.setViewportSize({width:390,height:844}); await page.goto('/');
+  await page.getByLabel('Development access token').fill(process.env.DEV_API_TOKEN!);
+  await page.getByRole('button', {name:'Open workspace'}).click();
+  await page.getByRole('button', {name:'Build workspace'}).click();
+  await expect(page.getByRole('heading', {name:'Invoices needing attention'})).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  await page.screenshot({path:'evidence/screenshots/workspace-mobile.png',fullPage:true});
+});
