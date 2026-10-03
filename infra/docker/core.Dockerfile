@@ -8,7 +8,7 @@ COPY packages/contracts ./packages/contracts
 RUN pnpm install --frozen-lockfile && pnpm --filter @runtime/web check && pnpm --filter @runtime/web build
 
 FROM debian:trixie-slim AS cpp
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake ninja-build git curl ca-certificates zip unzip tar pkg-config autoconf automake libtool bison flex && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake ninja-build git curl ca-certificates zip unzip tar pkg-config autoconf automake libtool bison flex python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN git clone https://github.com/microsoft/vcpkg.git .tools/vcpkg && cd .tools/vcpkg && git checkout 3cbc1db4d867ec83c89fba4c461321c11f78b5e3 && ./bootstrap-vcpkg.sh -disableMetrics
 COPY CMakeLists.txt CMakePresets.json vcpkg.json ./

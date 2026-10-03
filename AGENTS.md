@@ -1,33 +1,33 @@
-# Runtime coding-agent instructions
+# Runtime agent instructions
 
-Read docs/BUILD_PLAN.md, docs/TASKS.md, and evidence/implementation-status.md before continuing. The implementation plan is the target, not a declaration that features already work.
+## Product boundary — supersedes the invoice-first roadmap
 
-Preserve C++23/Drogon core, Svelte 5 UI, TypeScript provider bridge and PostgreSQL authoritative state. Do not replace the core with a JavaScript backend or add NATS, Valkey, gRPC, Kubernetes, generated code/Wasm, or local GPU inference without a justified approved architecture decision.
+Runtime is a general application-generation platform. The primary artifact is a persistent, versioned AppSpec: data/entities/relationships, UI/pages, roles, behavior and capability requirements. Workflows are components of applications, not a predefined menu of products.
 
-The owner authorized the initial main push. Subsequent features use task branches unless explicitly instructed otherwise. Preserve concurrent changes, do not force-push shared branches, and obtain authorization for merges, billable provider calls, paid provisioning, real external sends, and production promotion.
+A missing specialized capability MUST NOT invalidate or erase the rest of an application. Compile its known requirements, build the available UI/data/storage, and mark only the dependent feature unavailable. Installations must satisfy exact contracts/versions before activation. Do not fake a result or silently substitute a lesser ability.
 
-For each task: inspect dependencies and current code; add behavior and failure tests; implement one coherent change; execute checks; record commands, exit codes, commit, browser evidence and limitations. Compiler/test output—not a model opinion—determines pass/fail. Inspect rendered UI for frontend changes. Mocks, source files and screenshots do not prove live-provider integration. Mark missing credentials or account approvals BLOCKED_EXTERNAL and continue independent work rather than weakening acceptance.
+UI generation, typed persistence, versioned schema evolution and the asset/compression pipeline belong to the shared platform. Examples such as a painting studio, support desk or booking system must remain externally supplied AppSpecs/tests. No entity names or business-specific routes in the core. A visual designer is a development input, not a replacement for the requested natural-language product.
 
-## Invariants
+## Stack and working procedure
 
-The core owns identity, tenant context, grants, budgets, workflow state, approvals and execution authority. The bridge translates provider protocols; it cannot select new recipients, tenants, capabilities or spending limits. No generic credential retrieval API.
+Preserve C++23/Drogon, Svelte5/TypeScript, Node24 integration bridge and PostgreSQL authority. Use task branches, preserve concurrent changes and do not force-push shared history. No main merge, paid resources, billable model evaluation, real external actions or production deployment without owner authorization.
 
-Use a restricted application role, forced PostgreSQL RLS, composite tenant foreign keys and transaction-local tenant settings. Runtime roles must not own protected tables, be superusers or have BYPASSRLS. Test connection reuse and context reset. Audit records are append-only to the application.
+Read current contracts/code, BUILD_PLAN, TASKS and evidence first. Add behavioral/failure tests; implement a coherent change; execute commands; record exit codes and scope. Inspect real browser output. Missing credentials/permissions are BLOCKED_EXTERNAL, not a reason to replace integration behavior with an unlabelled mock.
 
-The initial worker executes only deterministic local work and simulation in short transactions. Before external tools, implement leased/fenced dispatch, persisted intent, receipts and unknown-outcome reconciliation. Never hold a database transaction during provider/model I/O. Timeout does not prove an email was not sent. Never blindly retry an uncertain external write.
+## Core invariants
 
-Approval binds the exact sender, recipient, content, source conditions, tenant, tool/version, proposal hash and expiry. Editing invalidates it. Recheck membership, grants, limits, approval and source conditions immediately before dispatch. Cancellation cannot undo a delivered message. Schedules cannot inherit permission for future sends.
+The C++ core owns validation, identity/grants, tenant context, budgets, application versions, action authorization and durable state. The bridge translates provider protocols; it cannot invent new authority. Models propose application definitions, not arbitrary executable code or SQL. Generated UI uses registered components and trusted data bindings, not raw HTML/eval.
 
-Treat emails, files, CSV cells, model outputs and MCP descriptions as untrusted data. No arbitrary eval, HTML, JavaScript, SQL, shell execution, package installation, URL fetching or secret lookup. Render only registered components with server-owned data bindings. Unknown capabilities fail closed.
+Use restricted DB roles, forced RLS, composite scoped foreign keys and transaction-local tenant context. No runtime superuser or BYPASSRLS. Persist application history and audit. Reject stale writes. Additive schema changes must preserve records; destructive changes need explicit migrations/backfill. File IDs and relationships cannot cross app/tenant boundaries.
 
-Use maintained cryptographic libraries. Encrypt credentials with authenticated encryption and versioned keys outside the database. Never put secrets/customer data in prompts, commits, screenshots, test fixtures or ordinary logs. Keep environments isolated.
+Assets require bounded upload/decompression, original-byte hashes, lossless recovery, authenticated reads, metadata/blob consistency and quotas. Compression is chosen only if useful. Treat content and filenames as untrusted; do not execute or unpack uploaded files. Byte hashes are not authorization. App-scoped deduplication must not expose another tenant's content. Move large objects to an object-storage backend with crash/reconciliation tests rather than silently removing integrity guarantees.
 
-Jev recommends a bounded processing route; it does not authorize actions, calculate invoices, or decide whether tests passed. Prefer deterministic functions and validated saved workflows. Keep lower-cost planning disabled until held-out evaluation passes. Reserve worst-case model usage before dispatch, including concurrency, reasoning, retries and repairs. Unknown usage stays reserved until reconciled. Never retry around a policy denial.
+The current local capability registry executes only trusted deterministic, read-only functions. Do not add external/provider I/O inside a database transaction. External capabilities require persisted dispatch, grants/approval where consequential, fencing/idempotency and unknown-outcome reconciliation. An API timeout is not evidence an action failed remotely.
 
-The example model YAML is not loaded by the fixture build. Probe actual account access and current model IDs/rates before activation. No silent model upgrades or unbounded agent loops.
+Real roles require authenticated principals and memberships; a role argument in a unit test is not implemented sign-in. Public/live startup remains disabled until its security gates pass. No tokens in model prompts, commits, screenshots or ordinary logs. Maintain encryption/rotation/redaction/retention boundaries.
 
-## Evidence and release
+Jev may route bounded requests; it cannot approve actions or prove tests passed. Reserve worst-case billable calls before dispatch, including reasoning, retry and concurrency. Unknown usage stays reserved. Keep provider/model IDs configurable and verify authorized account access before enabling calls. No hidden downgrade from app generation to predefined workflows.
 
-Task evidence records task ID, commit, dependencies, changed contracts/migrations, commands/exit codes, deterministic and real-provider results, redacted browser evidence, failure/security cases, limitations, external blockers and next eligible task.
+## Evidence
 
-No production claims before actual identity/isolation/dispatch/budget/live-provider/recovery gates pass. Build immutable images and promote the tested digest. After database restoration, pause external writes and reconcile the recovery window before resuming. Do not run destructive automatic rollback migrations. Report partial work honestly.
+Record task/commit, dependencies, changed interfaces/migrations, actual commands/results, real-provider scope, browser screenshots, failure cases, remaining blockers and next task. A scaffold/mock/CI file is not proof. Never label the public product complete merely because the local engine works. Keep the full architecture while reporting implementation progress precisely.
