@@ -1,25 +1,13 @@
 # Implementation evidence — 2026-10-03
 
-## Locally executed and passed
+Local GCC14/CMake checks: 43 C++ domain assertions passed, including money, CSV/date validation, DAG checks, exact approval, tenant/role rejection and conservative routing. The same suite passed AddressSanitizer and UndefinedBehaviorSanitizer. Thirteen isolated Jev adapter tests passed with mocked transport; no model network calls were made. Bash/Python syntax and the PostgreSQL/OpenSSL platform header syntax checks passed.
 
-GCC 14.2 / CMake 3.31: 43 C++ domain assertions, covering exact money and overflow, CSV bounds and quoting, dates, filtering, DAG cycles and invalid references, approval barriers, stale payloads, tenant/role rejection, terminal states, and conservative routing.
+GitHub Actions run 37126399802 passed Node24/TypeScript and Svelte checks, the web build, Jev tests and C++ domain/sanitizer suites. It generated and committed the dependency lock at 558a02080062073f538699ef720b4312c1181637. Its Docker server build failed at the JSON-to-Approval conversion; HTTP/RLS/browser suites did not run in that attempt.
 
-The same domain suite passed AddressSanitizer and UndefinedBehaviorSanitizer. Node 22.16 with native type stripping ran 13 isolated Jev adapter tests successfully. No model-provider network calls were made. Shell scripts passed Bash syntax checks; the Python HTTP suite passed syntax compilation. The PostgreSQL/OpenSSL platform header passed compiler syntax checking against installed client headers.
+The follow-up correction uses explicit typed JSON extraction, adds the job-lock UPDATE privilege through migration002, and applies all migrations on fresh local databases. An existing local database can apply the correction with scripts/migrate-local.sh.
 
-## Implemented, requiring network-enabled full-stack verification
+Full-stack verification requires a subsequent green CI run. The authoring container has no Docker daemon or dependency-download access; local isolated passes are not full-stack proof. Inspect the actual latest CI result.
 
-Drogon HTTP server, Svelte build/rendering, real PostgreSQL migration/RLS/queue behavior, concurrent approval HTTP tests, service restart persistence, and Playwright desktop/mobile checks. The authoring container has no Docker daemon or dependency-download connectivity; its domain-test pass must not be represented as these checks passing.
+Unavailable: production/live startup, real OIDC, live email/calendar writes, connected generative planning, billable routing, saved-app execution/schedules, cloud deployment and backup restoration. Simulated receipts are explicitly labeled. No T00–T24 task is declared fully complete because code or mocks exist.
 
-The CI workflow is configured to run these checks and publish evidence. Its actual result supersedes this pending status. Screenshots are evidence of rendering, not evidence of live integrations.
-
-## Deliberately unavailable
-
-Public/production startup, real OIDC, real email/calendar writes, connected generative planning, billable Jev routing, saved-app execution and schedules, cloud provisioning, and backup restoration. Simulated receipts are labeled throughout the API and UI. No T00–T25 task is declared fully complete merely because a scaffold or mock exists.
-
-## Next implementation order
-
-1. Resolve full-stack CI and browser failures and commit the generated dependency lock.
-2. Implement real OIDC/session/CSRF and workspace membership/connection grants.
-3. Add credential encryption, bridge service authentication, durable dispatch/receipt reconciliation.
-4. Wire usage reservations and model adapters, then generic workflow compilation and the second/new-mini-app demonstrations.
-5. Add real-provider acceptance, persistence/recovery failure injection, operations, and release gates.
+Next: full-stack verification, then identity/grants, encrypted credential broker and durable external dispatch, followed by model budgets/planning and the remaining real-account demonstrations.

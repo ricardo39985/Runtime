@@ -160,7 +160,9 @@ struct App {
         if (doc.at("status") == "executing" || doc.at("status") == "completed") output = doc;
         else {
           require(doc.at("status") == "awaiting_approval","invalid_state","Run is not awaiting approval.");
-          validate_approval({tenant,doc.at("proposal_hash"),doc.at("version"),doc.at("expires_at")},tenant,"owner",hash,version,now_seconds(),doc.at("drafts").size());
+          const Approval proposal{tenant, doc.at("proposal_hash").get<std::string>(),
+                                  doc.at("version").get<std::uint64_t>(), doc.at("expires_at").get<std::int64_t>()};
+          validate_approval(proposal,tenant,"owner",hash,version,now_seconds(),doc.at("drafts").size());
           require(digest(tenant,id,doc) == hash,"stale_approval","Payload changed.");
           db.query("UPDATE runs SET state='executing' WHERE workspace_id=$1 AND id=$2",{tenant,id});
           db.query("INSERT INTO jobs(workspace_id,run_id,kind) VALUES($1,$2,'simulate') ON CONFLICT DO NOTHING",{tenant,id});

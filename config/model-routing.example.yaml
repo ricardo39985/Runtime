@@ -1,0 +1,45 @@
+# Example only: not loaded by the fixture build. No secrets here.
+# Probe actual account access/model IDs/current prices before enabling calls.
+schema_version: 1
+activation: disabled_until_budget_and_provider_gates_pass
+models:
+  router: {provider: typesafe, model_id: jev-1.13.0, timeout_ms: 800}
+  routine: {provider: openai, model_id: gpt-6-luna, max_output_tokens: 4096}
+  planner: {provider: openai, model_id: gpt-6.1-sol, max_output_tokens: 8192}
+  escalation: {provider: openai, model_id: gpt-6-astra, max_output_tokens: 8192}
+  alternate: {provider: anthropic, model_id: claude-sonnet-5-5, max_output_tokens: 8192}
+routing:
+  deterministic_first: true
+  saved_validated_workflows_skip_models: true
+  default_role: planner
+  router_failure_role: planner
+  cheap_planning_enabled: false
+  max_schema_repairs: 1
+  max_escalations: 1
+  cross_provider_fallback_requires_evaluation_and_allowlist: true
+  permission_denial_is_not_retryable: true
+limits:
+  plan_nodes: 24
+  provider_calls_per_run: 30
+  generative_calls_per_run: 8
+  router_calls_per_run: 2
+  mapped_items: 100
+  external_actions_per_approval: 10
+  global_concurrent_runs: 20
+  workspace_concurrent_runs: 4
+  automated_timeout_seconds: 300
+  approval_expiry_seconds: 1800
+budget:
+  currency: USD
+  initial_run_allowance: '0.25'
+  owner_approved_run_ceiling: '1.00'
+  global_monthly_guard: '100.00'
+  reserve_worst_case_before_dispatch: true
+  include_reasoning_retries_repairs_and_concurrency: true
+  unknown_usage_remains_reserved: true
+security:
+  model_can_grant_authority: false
+  execute_generated_code: false
+  accept_model_sql_or_html: false
+  send_credentials_to_models: false
+  arbitrary_mcp_servers: false
