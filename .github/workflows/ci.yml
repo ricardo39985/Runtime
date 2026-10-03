@@ -1,4 +1,4 @@
-name: Runtime checks
+name: Runtime application checks
 on:
   push:
     branches: [main]
@@ -13,8 +13,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -23,35 +21,25 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --global pnpm@10.11.0
-      - name: Bootstrap the missing dependency lock once
-        if: ${{ hashFiles('pnpm-lock.yaml') == '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          pnpm install --lockfile-only --ignore-scripts
-          git config user.name 'Runtime dependency bootstrap'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add pnpm-lock.yaml
-          git commit -m 'build: lock Runtime workspace dependencies'
-          AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin HEAD:main
       - run: pnpm install --frozen-lockfile
       - run: pnpm check && pnpm test && pnpm build
-      - name: Native domain and sanitizer tests
+      - name: Install native-test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-json-dev libssl-dev libzstd-dev
+      - name: Domain, application, compression and sanitizer checks
         run: |
           cmake --preset domain
-          cmake --build --preset domain
+          cmake --build --preset domain --parallel 2
           ctest --preset domain
           cmake --preset sanitizers
-          cmake --build --preset sanitizers
+          cmake --build --preset sanitizers --parallel 2
           ctest --preset sanitizers
-      - name: Start real local stack
+      - name: Build and start actual local stack
         run: ./scripts/bootstrap.sh && ./scripts/dev-up.sh
-      - name: HTTP, approval, and isolation tests
-        run: ./scripts/test-integration.sh && ./scripts/test-security.sh
-      - name: Browser verification
+      - name: Application API, isolation and actual restart
+        run: ./scripts/test-integration.sh && ./scripts/test-security.sh && ./scripts/test-restart.sh
+      - name: Browser and mobile verification
         run: pnpm exec playwright install --with-deps chromium && ./scripts/test-e2e.sh
-      - name: Capture build and browser evidence
+      - name: Capture evidence
         if: always()
         run: |
           mkdir -p evidence/ci
@@ -61,12 +49,11 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: runtime-check-evidence
+          name: runtime-application-evidence
           path: |
             evidence/ci
             evidence/screenshots
             playwright-report
             test-results
-            pnpm-lock.yaml
       - if: always()
         run: docker compose --env-file .env -p runtime-local -f infra/compose.yaml down || true

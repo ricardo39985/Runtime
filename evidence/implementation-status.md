@@ -1,13 +1,23 @@
-# Implementation evidence — 2026-10-03
+# Application-engine implementation evidence
 
-Local GCC14/CMake checks: 43 C++ domain assertions passed, including money, CSV/date validation, DAG checks, exact approval, tenant/role rejection and conservative routing. The same suite passed AddressSanitizer and UndefinedBehaviorSanitizer. Thirteen isolated Jev adapter tests passed with mocked transport; no model network calls were made. Bash/Python syntax and the PostgreSQL/OpenSSL platform header syntax checks passed.
+Scope: replacement of the invoice-specific executable/UI with a general AppSpec compiler, generated data interface, durable PostgreSQL application storage and lossless asset pipeline. No main merge or production deployment is implied.
 
-GitHub Actions run 37126399802 passed Node24/TypeScript and Svelte checks, the web build, Jev tests and C++ domain/sanitizer suites. It generated and committed the dependency lock at 558a02080062073f538699ef720b4312c1181637. Its Docker server build failed at the JSON-to-Approval conversion; HTTP/RLS/browser suites did not run in that attempt.
+## Actually executed locally
 
-The follow-up correction uses explicit typed JSON extraction, adds the job-lock UPDATE privilege through migration002, and applies all migrations on fresh local databases. An existing local database can apply the correction with scripts/migrate-local.sh.
+GCC14.2 compiled application.cpp, storage.cpp, json.cpp and application_test.cpp with C++23, -Wall -Wextra -Wpedantic -Werror. All 53 application/capability/storage tests passed in Debug and optimized Release (-O3). The same 53 passed AddressSanitizer and UndefinedBehaviorSanitizer at -O0 with -fno-omit-frame-pointer.
 
-Full-stack verification requires a subsequent green CI run. The authoring container has no Docker daemon or dependency-download access; local isolated passes are not full-stack proof. Inspect the actual latest CI result.
+An initial optimized (-O1) sanitizer compilation hit a GCC diagnostic in the installed Boost.JSON storage_ptr reference-counting headers, treated as an error. The normal Debug/-O0 sanitizer configuration compiled and passed; this is not an optimized sanitizer pass. The pinned dependency production build remains a separate CI gate.
 
-Unavailable: production/live startup, real OIDC, live email/calendar writes, connected generative planning, billable routing, saved-app execution/schedules, cloud deployment and backup restoration. Simulated receipts are explicitly labeled. No T00–T24 task is declared fully complete because code or mocks exist.
+The suite covers absent-capability validity, unchanged-spec activation with a test-only capability, exact contract/version matching, role validation, field/date/decimal handling, unrelated app definitions, safe upgrades, file size/filename bounds, identity/zstd selection, original-byte roundtrip, digest verification, corrupt/trailing-frame rejection and decompression limits. No provider/model network calls occurred.
 
-Next: full-stack verification, then identity/grants, encrypted credential broker and durable external dispatch, followed by model budgets/planning and the remaining real-account demonstrations.
+Python API-test syntax and shell-script syntax checks passed. No local Docker daemon, PostgreSQL server, pnpm dependency download or Drogon installation is available. HTTP/server, database, Svelte/browser and restart tests are written but are not yet declared passed in this file.
+
+## Inherited build blocker corrected
+
+Main CI run37127138574 passed the older isolated/web checks but failed in Docker's vcpkg-tool-meson build because python3 was absent. The new Dockerfile installs Python3. This correction requires a new actual full-stack build; it does not prove one succeeded.
+
+## Explicit remaining boundaries
+
+Natural-language planner disconnected; fixed development owner instead of live OIDC; finite data-oriented renderer rather than every interactive surface; no paint implementation; trusted local record-snapshot capability only; no runtime arbitrary-plugin installer, external sends/schedules or billable models. Current assets use small-object PostgreSQL BYTEA, not deployed R2. Public startup is still disabled. Do not present these as completed features.
+
+CI is configured for real application HTTP/DB/RLS and restart tests plus desktop/mobile screenshots. The actual run conclusion, not this pending note, determines full-stack verification. Record its commit and result before advancing A01–A05 acceptance.
