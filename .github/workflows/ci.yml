@@ -1,4 +1,4 @@
-name: Runtime checks
+name: Runtime application engine checks
 on:
   push:
     branches: [main]
@@ -13,8 +13,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -23,50 +21,68 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --global pnpm@10.11.0
-      - name: Bootstrap the missing dependency lock once
-        if: ${{ hashFiles('pnpm-lock.yaml') == '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          pnpm install --lockfile-only --ignore-scripts
-          git config user.name 'Runtime dependency bootstrap'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add pnpm-lock.yaml
-          git commit -m 'build: lock Runtime workspace dependencies'
-          AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin HEAD:main
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check && pnpm test && pnpm build
-      - name: Native domain and sanitizer tests
+      - name: TypeScript, Svelte and provider contract tests
+        run: pnpm check && pnpm test && pnpm build
+      - name: Native engine and lossless storage tests
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libzstd-dev libssl-dev
           cmake --preset domain
           cmake --build --preset domain
           ctest --preset domain
           cmake --preset sanitizers
           cmake --build --preset sanitizers
           ctest --preset sanitizers
-      - name: Start real local stack
-        run: ./scripts/bootstrap.sh && ./scripts/dev-up.sh
-      - name: HTTP, approval, and isolation tests
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: cpp-cache
+        with:
+          path: /tmp/runtime-cpp-cache
+          key: runtime-cpp-v2-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'infra/docker/core.Dockerfile', 'infra/triplets/*') }}
+          restore-keys: runtime-cpp-v2-${{ runner.os }}-
+      - name: Build and cache pinned C++ dependencies
+        id: cpp-deps
+        run: |
+          docker buildx create --name runtime-builder --driver docker-container --use
+          CACHE=()
+          if [[ -f /tmp/runtime-cpp-cache/index.json ]]; then CACHE+=(--cache-from type=local,src=/tmp/runtime-cpp-cache); fi
+          docker buildx build --target cpp-deps -f infra/docker/core.Dockerfile "${CACHE[@]}" --cache-to type=local,dest=/tmp/runtime-cpp-cache-next,mode=max .
+          rm -rf /tmp/runtime-cpp-cache
+          mv /tmp/runtime-cpp-cache-next /tmp/runtime-cpp-cache
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: ${{ always() && steps.cpp-deps.outcome == 'success' && steps.cpp-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: /tmp/runtime-cpp-cache
+          key: ${{ steps.cpp-cache.outputs.cache-primary-key }}
+      - name: Build real application services
+        run: |
+          docker buildx build --load --cache-from type=local,src=/tmp/runtime-cpp-cache -t runtime-local-core -f infra/docker/core.Dockerfile .
+          docker buildx build --load -t runtime-local-bridge -f infra/docker/bridge.Dockerfile .
+      - name: Start actual PostgreSQL and application services
+        run: |
+          ./scripts/bootstrap.sh
+          docker compose --env-file .env -p runtime-local -f infra/compose.yaml up --no-build -d --wait --wait-timeout 120
+      - name: Application API, customer isolation, compression and restart persistence
         run: ./scripts/test-integration.sh && ./scripts/test-security.sh
-      - name: Browser verification
+      - name: Real browser verification
         run: pnpm exec playwright install --with-deps chromium && ./scripts/test-e2e.sh
-      - name: Capture build and browser evidence
+      - name: Capture redacted service evidence
         if: always()
         run: |
           mkdir -p evidence/ci
           git rev-parse HEAD > evidence/ci/commit.txt
-          docker compose --env-file .env -p runtime-local -f infra/compose.yaml ps > evidence/ci/services.txt 2>/dev/null || true
-          docker compose --env-file .env -p runtime-local -f infra/compose.yaml logs --no-color > evidence/ci/services.log 2>/dev/null || true
+          if [[ -f .env ]]; then
+            docker compose --env-file .env -p runtime-local -f infra/compose.yaml ps > evidence/ci/services.txt 2>/dev/null || true
+            docker compose --env-file .env -p runtime-local -f infra/compose.yaml logs --no-color > evidence/ci/services.log 2>/dev/null || true
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: runtime-check-evidence
+          name: runtime-application-engine-evidence
           path: |
             evidence/ci
             evidence/screenshots
             playwright-report
             test-results
-            pnpm-lock.yaml
       - if: always()
-        run: docker compose --env-file .env -p runtime-local -f infra/compose.yaml down || true
+        run: if [[ -f .env ]]; then docker compose --env-file .env -p runtime-local -f infra/compose.yaml down; fi
